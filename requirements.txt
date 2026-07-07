@@ -1,0 +1,8 @@
+streamlit>=1.45.0
+psycopg2-binary>=2.9.0
+fpdf2>=2.8.0
+google-api-python-client>=2.170.0
+google-auth>=2.38.0
+google-auth-oauthlib>=1.2.1
+slack_sdk>=3.34.0
+certifi>=2024.0.0
