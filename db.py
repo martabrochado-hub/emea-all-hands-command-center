@@ -33,11 +33,39 @@ DEFAULT_OPS_CHECKLIST = [
 _JSON_FIELDS = {"checklist", "prep_checklist", "ops_checklist", "reminders", "new_joiners_data"}
 
 
-def _conn() -> psycopg2.extensions.connection:
-    return psycopg2.connect(
-        st.secrets["SUPABASE_DB_URL"],
-        cursor_factory=psycopg2.extras.RealDictCursor,
+@st.cache_resource
+def _get_connection() -> psycopg2.extensions.connection:
+    """Cached connection reused across reruns — avoids per-request cold starts."""
+    url = st.secrets["SUPABASE_DB_URL"]
+    # Use Neon's pooler endpoint: keeps connections warm, eliminates scale-to-zero latency
+    pooler_url = url.replace(
+        "ep-noisy-hill-asr9uqsm.c-4.",
+        "ep-noisy-hill-asr9uqsm-pooler.c-4.",
     )
+    conn = psycopg2.connect(
+        pooler_url,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+        connect_timeout=10,
+    )
+    conn.autocommit = False
+    return conn
+
+
+def _conn() -> psycopg2.extensions.connection:
+    conn = _get_connection()
+    if conn.closed:
+        _get_connection.clear()
+        conn = _get_connection()
+    try:
+        conn.cursor().execute("SELECT 1")
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        _get_connection.clear()
+        conn = _get_connection()
+    return conn
 
 
 def init_db():
