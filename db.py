@@ -1,5 +1,5 @@
 """
-PostgreSQL persistence via Supabase — events, contributors, and status log.
+PostgreSQL persistence via Neon — events, contributors, and status log.
 Connection string read from st.secrets["SUPABASE_DB_URL"].
 """
 
@@ -35,9 +35,9 @@ _JSON_FIELDS = {"checklist", "prep_checklist", "ops_checklist", "reminders", "ne
 
 @st.cache_resource
 def _get_connection() -> psycopg2.extensions.connection:
-    """Cached connection reused across reruns — avoids per-request cold starts."""
+    """Cached connection — reused across reruns to avoid per-request cold starts."""
     url = st.secrets["SUPABASE_DB_URL"]
-    # Use Neon's pooler endpoint: keeps connections warm, eliminates scale-to-zero latency
+    # Use Neon pooler for faster connections
     pooler_url = url.replace(
         "ep-noisy-hill-asr9uqsm.c-4.",
         "ep-noisy-hill-asr9uqsm-pooler.c-4.",
@@ -57,7 +57,8 @@ def _conn() -> psycopg2.extensions.connection:
         _get_connection.clear()
         conn = _get_connection()
     try:
-        conn.cursor().execute("SELECT 1")
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
     except Exception:
         try:
             conn.rollback()
@@ -137,8 +138,7 @@ def init_db():
                     presentation_confirmed  INTEGER DEFAULT 0,
                     slack_channel_created   INTEGER DEFAULT 0,
                     notes                   TEXT DEFAULT '',
-                    confirmed               INTEGER DEFAULT 0,
-                    FOREIGN KEY (cycle) REFERENCES events(cycle) ON DELETE CASCADE
+                    confirmed               INTEGER DEFAULT 0
                 )
             """)
             cur.execute("""
@@ -147,12 +147,11 @@ def init_db():
                     cycle   TEXT NOT NULL,
                     ts      TEXT DEFAULT '',
                     icon    TEXT DEFAULT '🔵',
-                    message TEXT NOT NULL,
-                    FOREIGN KEY (cycle) REFERENCES events(cycle) ON DELETE CASCADE
+                    message TEXT NOT NULL
                 )
             """)
-            # Add any new columns that may not exist yet
-            new_columns = [
+            # Add any columns introduced after initial deploy
+            new_cols = [
                 ("events", "reminders",                 "TEXT DEFAULT '[]'"),
                 ("events", "contributor_msg_final",     "TEXT DEFAULT ''"),
                 ("events", "post_event_channel",        "TEXT DEFAULT 'online-monthly-emea-all-hands'"),
@@ -167,31 +166,24 @@ def init_db():
                 ("events", "new_joiners_data",          "TEXT DEFAULT '[]'"),
                 ("events", "new_joiners_slide_updated", "INTEGER DEFAULT 0"),
                 ("events", "new_joiners_fetching",      "INTEGER DEFAULT 0"),
-                ("contributors", "team_function",           "TEXT DEFAULT ''"),
-                ("contributors", "availability_confirmed",  "INTEGER DEFAULT 0"),
-                ("contributors", "presentation_confirmed",  "INTEGER DEFAULT 0"),
-                ("contributors", "slack_channel_created",   "INTEGER DEFAULT 0"),
-                ("contributors", "notes",                   "TEXT DEFAULT ''"),
             ]
-            for table, col, col_def in new_columns:
+            for table, col, col_def in new_cols:
                 cur.execute(
                     f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_def}"
                 )
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 # ── Events ─────────────────────────────────────────────────────
 
 def get_event(cycle: str) -> Optional[dict]:
     conn = _conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM events WHERE cycle = %s", (cycle,))
-            row = cur.fetchone()
-    finally:
-        conn.close()
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM events WHERE cycle = %s", (cycle,))
+        row = cur.fetchone()
     if not row:
         return None
     d = dict(row)
@@ -214,9 +206,7 @@ def upsert_event(cycle: str, **fields):
                     vals.append(json.dumps(v) if k in _JSON_FIELDS else v)
                 if parts:
                     vals.append(cycle)
-                    cur.execute(
-                        f"UPDATE events SET {', '.join(parts)} WHERE cycle = %s", vals
-                    )
+                    cur.execute(f"UPDATE events SET {', '.join(parts)} WHERE cycle = %s", vals)
             else:
                 if "prep_checklist" not in fields:
                     fields["prep_checklist"] = DEFAULT_PREP_CHECKLIST
@@ -228,12 +218,12 @@ def upsert_event(cycle: str, **fields):
                     phs.append("%s")
                     vals.append(json.dumps(v) if k in _JSON_FIELDS else v)
                 cur.execute(
-                    f"INSERT INTO events ({', '.join(cols)}) VALUES ({', '.join(phs)})",
-                    vals,
+                    f"INSERT INTO events ({', '.join(cols)}) VALUES ({', '.join(phs)})", vals
                 )
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def set_check(cycle: str, key: str, val: bool):
@@ -245,13 +235,12 @@ def set_check(cycle: str, key: str, val: bool):
     conn = _conn()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE events SET checklist = %s WHERE cycle = %s",
-                (json.dumps(cl), cycle),
-            )
+            cur.execute("UPDATE events SET checklist = %s WHERE cycle = %s",
+                        (json.dumps(cl), cycle))
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def delete_event(cycle: str):
@@ -262,21 +251,19 @@ def delete_event(cycle: str):
             cur.execute("DELETE FROM contributors WHERE cycle = %s", (cycle,))
             cur.execute("DELETE FROM events       WHERE cycle = %s", (cycle,))
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def list_cycles() -> List[str]:
     conn = _conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT cycle FROM events "
-                "ORDER BY CASE WHEN event_date != '' THEN event_date ELSE cycle END DESC"
-            )
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT cycle FROM events "
+            "ORDER BY CASE WHEN event_date != '' THEN event_date ELSE cycle END DESC"
+        )
+        rows = cur.fetchall()
     return [r["cycle"] for r in rows]
 
 
@@ -284,14 +271,9 @@ def list_cycles() -> List[str]:
 
 def get_contributors(cycle: str) -> List[dict]:
     conn = _conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM contributors WHERE cycle = %s ORDER BY name", (cycle,)
-            )
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM contributors WHERE cycle = %s ORDER BY name", (cycle,))
+        rows = cur.fetchall()
     return [dict(r) for r in rows]
 
 
@@ -305,12 +287,11 @@ def add_contributor(cycle: str, name: str, **kwargs):
                 cols.append(k)
                 vals.append(v)
             phs = ", ".join(["%s"] * len(cols))
-            cur.execute(
-                f"INSERT INTO contributors ({', '.join(cols)}) VALUES ({phs})", vals
-            )
+            cur.execute(f"INSERT INTO contributors ({', '.join(cols)}) VALUES ({phs})", vals)
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def update_contributor(cid: int, **fields):
@@ -323,12 +304,11 @@ def update_contributor(cid: int, **fields):
                 vals.append(v)
             if parts:
                 vals.append(cid)
-                cur.execute(
-                    f"UPDATE contributors SET {', '.join(parts)} WHERE id = %s", vals
-                )
+                cur.execute(f"UPDATE contributors SET {', '.join(parts)} WHERE id = %s", vals)
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def delete_contributor(cid: int):
@@ -337,8 +317,9 @@ def delete_contributor(cid: int):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM contributors WHERE id = %s", (cid,))
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 # ── Status Log ─────────────────────────────────────────────────
@@ -353,21 +334,19 @@ def log(cycle: str, message: str, icon: str = "🔵"):
                 (cycle, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), icon, message),
             )
         conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def get_logs(cycle: str, limit: int = 50) -> List[dict]:
     conn = _conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM status_log WHERE cycle = %s ORDER BY id DESC LIMIT %s",
-                (cycle, limit),
-            )
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM status_log WHERE cycle = %s ORDER BY id DESC LIMIT %s",
+            (cycle, limit),
+        )
+        rows = cur.fetchall()
     return [dict(r) for r in rows]
 
 

@@ -322,8 +322,8 @@ def compute_progress(event: dict, contributors: list) -> tuple[int, list[str]]:
     stages = [
         ("📋 Event Setup",       bool(event.get("event_date") and event.get("zoom_link"))),
         ("👥 Contributors",      len(contributors) > 0),
-        ("🆕 New Joiners Slide", bool(event.get("new_joiners_slide_updated", False))),
         ("💬 Communications",    bool(event.get("contributor_msg_final", "").strip())),
+        ("🆕 New Joiners Slide", bool(event.get("new_joiners_slide_updated", False))),
         ("⏰ Auto Reminders",    any(
             r.get("status") == "approved"
             for r in event.get("reminders", [])
@@ -2175,9 +2175,9 @@ def main():
     elif section == NAV_ITEMS[1]:
         render_contributors(cycle)
     elif section == NAV_ITEMS[2]:
-        render_new_joiners(cycle)
-    elif section == NAV_ITEMS[3]:
         render_communications(cycle)
+    elif section == NAV_ITEMS[3]:
+        render_new_joiners(cycle)
     elif section == NAV_ITEMS[4]:
         render_auto_reminders(cycle)
     elif section == NAV_ITEMS[5]:

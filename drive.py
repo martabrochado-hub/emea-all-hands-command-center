@@ -404,7 +404,28 @@ def update_new_joiners_slide(presentation_id: str, people: list, period_label: s
         COL_W         = SW // COLS       # 2,286,000 EMU
         CARD_W        = 2_000_000
         CARD_H        =   550_000
-        ROW_Y         = [1_350_000, 3_100_000]
+        CIRCLE_D      =   480_000        # avatar circle diameter
+        CIRCLE_GAP    =    60_000        # gap between circle and text
+        # Row Y = top of avatar circle for each row
+        ROW_Y         = [1_250_000, 2_800_000]
+
+        # Avatar fill colours per country
+        AVATAR_COLORS = {
+            "Spain":          {"red": 0.78, "green": 0.14, "blue": 0.18},
+            "United Kingdom": {"red": 0.12, "green": 0.29, "blue": 0.69},
+            "Poland":         {"red": 0.60, "green": 0.08, "blue": 0.12},
+            "Netherlands":    {"red": 0.85, "green": 0.42, "blue": 0.08},
+            "Germany":        {"red": 0.22, "green": 0.22, "blue": 0.22},
+            "France":         {"red": 0.00, "green": 0.27, "blue": 0.65},
+            "Italy":          {"red": 0.00, "green": 0.48, "blue": 0.22},
+        }
+        _DEFAULT_AV = {"red": 0.29, "green": 0.29, "blue": 0.98}
+
+        def _initials(name: str) -> str:
+            parts = [p for p in name.split() if p]
+            if len(parts) >= 2:
+                return (parts[0][0] + parts[-1][0]).upper()
+            return name[:2].upper() if name else "?"
 
         FLAG_COUNTRY  = {
             "🇪🇸": "Spain",
@@ -534,7 +555,7 @@ def update_new_joiners_slide(presentation_id: str, people: list, period_label: s
                 col  = i % COLS
                 row  = i // COLS
                 x    = col * COL_W + (COL_W - CARD_W) // 2
-                y    = ROW_Y[row]
+                cy   = ROW_Y[row]   # top of avatar circle
 
                 name     = p.get("name", "")
                 title    = p.get("title", "")
@@ -543,9 +564,73 @@ def update_new_joiners_slide(presentation_id: str, people: list, period_label: s
                 loc_line = f"{flag}  {location}" if location else flag
                 text     = "\n".join(filter(None, [name, title, loc_line]))
 
+                # ── Avatar circle (or image if photo_url provided) ───────
+                av_color = AVATAR_COLORS.get(country, _DEFAULT_AV)
+                cx       = x + (CARD_W - CIRCLE_D) // 2  # centre horizontally
+                photo_url = p.get("photo_url", "")
+
+                cid = "nj_av_" + _uuid.uuid4().hex[:8]
+                reqs.append({"createShape": {
+                    "objectId": cid, "shapeType": "ELLIPSE",
+                    "elementProperties": {
+                        "pageObjectId": sid,
+                        "size": {
+                            "width":  {"magnitude": CIRCLE_D, "unit": "EMU"},
+                            "height": {"magnitude": CIRCLE_D, "unit": "EMU"},
+                        },
+                        "transform": {"scaleX": 1, "scaleY": 1,
+                                      "translateX": cx, "translateY": cy,
+                                      "unit": "EMU"},
+                    },
+                }})
+
+                if photo_url:
+                    # Fill the ellipse with the photo (circular crop via shape mask)
+                    reqs.append({"updateShapeProperties": {
+                        "objectId": cid,
+                        "fields": "shapeBackgroundFill",
+                        "shapeProperties": {
+                            "shapeBackgroundFill": {
+                                "stretchedPictureFill": {"contentUrl": photo_url}
+                            }
+                        },
+                    }})
+                else:
+                    # Coloured placeholder with initials
+                    reqs += [
+                        {"updateShapeProperties": {
+                            "objectId": cid,
+                            "fields": "shapeBackgroundFill",
+                            "shapeProperties": {
+                                "shapeBackgroundFill": {
+                                    "solidFill": {
+                                        "color": {"rgbColor": av_color},
+                                        "alpha": 1.0,
+                                    }
+                                }
+                            },
+                        }},
+                        {"insertText": {"objectId": cid, "text": _initials(name), "insertionIndex": 0}},
+                        {"updateTextStyle": {
+                            "objectId": cid, "textRange": {"type": "ALL"},
+                            "style": {
+                                "fontFamily": "Montserrat",
+                                "fontSize": {"magnitude": 14, "unit": "PT"},
+                                "bold": True,
+                                "foregroundColor": {
+                                    "opaqueColor": {"rgbColor": {"red": 1.0, "green": 1.0, "blue": 1.0}}
+                                },
+                            },
+                            "fields": "fontFamily,fontSize,bold,foregroundColor",
+                        }},
+                        _center(cid),
+                    ]
+
+                # ── Text box (below circle) ───────────────────────────────
+                text_y = cy + CIRCLE_D + CIRCLE_GAP
                 pid = "nj_p_" + _uuid.uuid4().hex[:8]
                 reqs += [
-                    _box(sid, pid, x, y, CARD_W, CARD_H),
+                    _box(sid, pid, x, text_y, CARD_W, CARD_H),
                     {"insertText": {"objectId": pid, "text": text, "insertionIndex": 0}},
                     _txt_style(pid, 0, None, size_pt=7),
                     _txt_style(pid, 0, len(name), bold=True, size_pt=7),
