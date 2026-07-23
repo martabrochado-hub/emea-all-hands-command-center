@@ -10,7 +10,7 @@ def contributor_message(
     support_contacts: str = "Rolando Angelini or Wojtek Szambelan",
 ) -> str:
     if presentation_title and presentation_link:
-        pres_ref = f"{presentation_title}\n{presentation_link}"
+        pres_ref = f"<{presentation_link}|{presentation_title}>"
     elif presentation_link:
         pres_ref = presentation_link
     elif presentation_title:

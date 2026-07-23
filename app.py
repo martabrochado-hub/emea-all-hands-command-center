@@ -1797,7 +1797,9 @@ def render_notion_folder(cycle: str):
         pres_title_clean = pres_title.replace("_", " ")
 
         st.markdown(
-            f'<div class="smart-alert">📊 Ready to save: <strong>{pres_title}</strong></div>',
+            f'<div class="smart-alert">📊 Ready to save: '
+            f'<a href="{pres_url}" target="_blank" style="color:{LIGHT_INDIGO};">'
+            f'{pres_title}</a></div>',
             unsafe_allow_html=True,
         )
         st.caption("Copy the prompt below and run it in Claude Code to add the presentation to Notion:")

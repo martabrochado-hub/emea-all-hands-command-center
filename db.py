@@ -203,7 +203,7 @@ def upsert_event(cycle: str, **fields):
                 parts, vals = [], []
                 for k, v in fields.items():
                     parts.append(f"{k} = %s")
-                    vals.append(json.dumps(v) if k in _JSON_FIELDS else v)
+                    vals.append(json.dumps(v) if k in _JSON_FIELDS else (int(v) if isinstance(v, bool) else v))
                 if parts:
                     vals.append(cycle)
                     cur.execute(f"UPDATE events SET {', '.join(parts)} WHERE cycle = %s", vals)

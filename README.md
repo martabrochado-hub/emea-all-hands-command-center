@@ -1,59 +1,70 @@
-# Affirm EMEA All Hands — Automation Engine
+# Affirm People Ops Triage Bot
 
-Streamlit app that automates the EMEA All Hands operational lifecycle:
-Google Drive file management, Slack channel orchestration, and presenter coordination.
+A Streamlit-powered internal tool that helps the Affirm People Team manage and automate responses to employee Slack messages about benefits, leave, payroll, immigration, and more.
+
+## What it does
+
+1. **Paste** an employee's Slack message
+2. **Auto-classify** the topic and subtopic using multilingual keyword matching (EN, ES, CA, PL)
+3. **Generate** a warm, policy-rich reply with three tone variations
+4. **Enrich** with country-specific policies (Spain, UK, Poland)
+5. **Preview** in a Slack-style UI, edit freely, then send or copy
 
 ## Quick start
 
 ```bash
-# 1. Install Python 3.11+ then:
 cd emea-all-hands-command-center
 pip install -r requirements.txt
-
-# 2. Set up secrets
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-# Edit secrets.toml with your Slack bot token
-
-# 3. Set up Google OAuth (one-time)
-# Download an OAuth 2.0 Client ID (Desktop app) JSON from Google Cloud Console
-# and save it as .streamlit/client_secret.json
-# The app will open a browser for you to log in on first run.
-
-# 4. Run
-streamlit run app.py
+streamlit run people_ops_triage.py --server.port 8503
 ```
 
-## Architecture
+Open http://localhost:8503 in your browser.
+
+## Files
 
 | File | Purpose |
 |---|---|
-| `app.py` | Main UI — three tabs (Setup & Folders, Presenter Comms, Event Day) |
-| `db.py` | SQLite persistence for events, contributors, status log |
-| `drive.py` | Google Drive API — folder creation, deck copy, blank slides (OAuth Desktop flow) |
-| `slack_ops.py` | Slack SDK — channel creation, invites, messaging |
-| `templates.py` | Verbatim Slack message templates |
+| `people_ops_triage.py` | Main app — classification, reply generation, translations, UI |
+| `slack_ops.py` | Slack API integration — send DMs and channel messages |
+| `app.py` | EMEA All Hands Command Center (separate event management app) |
+| `db.py` | SQLite persistence for the All Hands app |
+| `templates.py` | Slack message templates for the All Hands app |
+| `exports.py` | Export generators (TXT, HTML, PDF) for the All Hands app |
+| `drive.py` | Google Drive integration (optional) |
 
-## Secrets required
+## Key features
 
-| Key | Description |
-|---|---|
-| `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-...`). Scopes: `channels:manage`, `channels:write.invites`, `chat:write`, `groups:write`, `users:read`, `users:read.email` |
+- **13+ topics, 50+ subtopics** — Leave, Benefits, Payroll, Immigration, Equity, Workplace, L&D, Company Policies, Offboarding, and more
+- **Multilingual** — auto-detects English, Spanish, Catalan, and Polish; replies fully translated
+- **Country-specific policies** — select Spain, UK, or Poland for local leave entitlements, benefits, and statutory details
+- **Multi-question handling** — splits and classifies multiple questions in a single message
+- **Three tone variations** — Friendly & Warm, Short & Efficient, Structured / Policy-Guided
+- **Live Slack preview** — edits to the reply are reflected in real-time
+- **Out-of-scope handling** — provides useful info even for non-People Ops topics (e.g., IT, events) with appropriate disclaimers
+- **Analytics dashboard** — tracks question distribution by category
+- **Knowledge base** — Workday tutorials, Luxmed enrollment, TA300/7p tax processes, and more
 
-### Google OAuth setup
+## Slack integration (optional)
 
-This app uses **OAuth 2.0 (Desktop)**, not a service account. Your own Google account
-(e.g. Affirm login) is used so you have full access to Shared Drives.
+To send messages directly from the app, add a valid bot token to `.streamlit/secrets.toml`:
 
-1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials).
-2. Create an **OAuth 2.0 Client ID** (application type: **Desktop app**).
-3. Download the JSON and save it as `.streamlit/client_secret.json`.
-4. Enable the **Drive API** and **Slides API** in your project.
-5. On first run, the app opens a browser for you to log in. The token is cached in `.streamlit/token.json`.
+```toml
+SLACK_BOT_TOKEN = "xoxb-your-actual-bot-token"
+```
 
-## Workflow
+Required bot scopes: `chat:write`, `users:read`, `users:read.email`, `im:write`.
 
-1. **Setup & Folders** — Enter event details, run Google Drive automation (create folder, copy deck, create blank slides), create Slack contributor channel, add/invite contributors.
-2. **Presenter Comms** — Preview and approve the Welcome message and 1-Week Reminder before posting to the contributor channel.
-3. **Event Day** — Preview and approve the Day-of Reminder and Post-Event Follow-Up before posting to `#online-monthly-emea-all-hands`.
+## Requirements
 
-Every Slack message requires explicit **Approve & Send** before it is posted (human-in-the-loop).
+- Python 3.11+
+- `streamlit >= 1.45.0`
+- `slack_sdk >= 3.34.0`
+- See `requirements.txt` for full list
+
+## Brand
+
+Uses Affirm's color palette:
+- Indigo: `#4A4AF4`
+- Dark Indigo: `#0A0340`
+- Light Indigo: `#9DADF9`
+- Font: Axiforma (fallback: Inter, Arial)
